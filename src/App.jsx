@@ -17,13 +17,13 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
 // --- Firebase Configuration ---
 const firebaseConfig = {
-    apiKey: "AIzaSyAegjqG-7RZ7PK7qogFikQC773pSqwjAW8",
-    authDomain: "hootcrm-3e9fc.firebaseapp.com",
-    projectId: "hootcrm-3e9fc",
-    storageBucket: "hootcrm-3e9fc.appspot.com",
-    messagingSenderId: "43801835240",
-    appId: "1:43801835240:web:bfc3974154276f35fcbb5d",
-    measurementId: "G-Y7VKWGZWQB"
+    apiKey: import.meta.env.VITE_API_KEY,
+    authDomain: import.meta.env.VITE_AUTH_DOMAIN,
+    projectId: import.meta.env.VITE_PROJECT_ID,
+    storageBucket: import.meta.env.VITE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_APP_ID,
+    measurementId: import.meta.env.VITE_MEASUREMENT_ID
 };
 
 // --- Initialize Firebase ---
