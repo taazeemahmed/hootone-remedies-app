@@ -452,6 +452,25 @@ const AllCustomersList = ({ user }) => {
         return () => unsubscribe();
     }, [user]);
 
+    useEffect(() => {
+        const today = new Date();
+        sales.forEach(sale => {
+            // Only send reminder 1-2 days before their medicine ends
+            if (sale.dosageEndDate && sale.phoneNumber) {
+                const endDate = new Date(sale.dosageEndDate.seconds * 1000);
+                const daysLeft = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
+                if (daysLeft === 2) { // Customize this window as desired
+                    sendWhatsAppReminder(
+                        sale.phoneNumber,
+                        "med_reminder", // Replace with your approved template name
+                        [sale.patientName, sale.medicineName, endDate.toLocaleDateString()]
+                    );
+                }
+            }
+        });
+    }, [sales]); // Re-run this when patient sales data changes
+
+
     const filteredSales = sales.filter(sale =>
         (sale.patientName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (sale.phoneNumber || '').includes(searchTerm)
