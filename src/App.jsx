@@ -4,7 +4,6 @@ import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, si
 import { getFirestore, collection, addDoc, getDocs, doc, setDoc, updateDoc, deleteDoc, query, where, onSnapshot } from 'firebase/firestore';
 import { Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
-import './index.css'
 
 // --- Icon SVGs ---
 const EditIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>;
@@ -16,6 +15,7 @@ const AlertTriangleIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="2
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
 // --- Firebase Configuration ---
+// It's recommended to use environment variables for this
 const firebaseConfig = {
     apiKey: import.meta.env.VITE_API_KEY,
     authDomain: import.meta.env.VITE_AUTH_DOMAIN,
@@ -70,6 +70,7 @@ const AuthProvider = ({ children }) => {
                     if (doc.exists()) {
                         setUserData({ uid: doc.id, ...doc.data() });
                     } else {
+                        // This case might happen if user is authenticated but their doc is deleted
                         setUserData(null);
                     }
                     setLoading(false);
@@ -112,13 +113,23 @@ function HootoneApp() {
     const [currentPage, setCurrentPage] = useState('dashboard');
     const authContext = useAuth();
 
-    if (!authContext) return <div className="loading-screen">Initializing Auth...</div>;
+    // A simple loading state while context initializes
+    if (!authContext) return <div className="flex items-center justify-center min-h-screen bg-slate-100">Initializing...</div>;
 
     const { user, userData, loading } = authContext;
 
-    if (loading) return <div className="loading-screen">Loading Application...</div>;
-    if (!user) return <LoginScreen />;
-    if (!userData) return <div className="loading-screen">Loading User Data...</div>;
+    if (loading) {
+        return <div className="flex items-center justify-center min-h-screen bg-slate-100">Loading Application...</div>;
+    }
+
+    if (!user) {
+        return <LoginScreen />;
+    }
+
+    // This handles the case where user is logged in but their data isn't loaded yet or doesn't exist.
+    if (!userData) {
+        return <div className="flex items-center justify-center min-h-screen bg-slate-100">Loading User Data...</div>;
+    }
 
     const navigateTo = (page) => setCurrentPage(page);
 
@@ -141,11 +152,16 @@ function HootoneApp() {
 
 const Header = ({ navigateTo, userRole }) => {
     const handleSignOut = async () => {
-        await signOut(auth);
+        try {
+            await signOut(auth);
+        } catch (error) {
+            console.error("Error signing out: ", error);
+        }
     };
 
-    const navLinkStyle = "text-slate-600 hover:text-indigo-600 font-medium transition-colors duration-200";
-    const activeNavLinkStyle = "text-indigo-600 font-semibold"; // Example for active state
+    const navLinkStyle = "text-slate-600 hover:text-indigo-600 font-medium transition-colors duration-200 px-3 py-2 rounded-md";
+    // Active style can be managed with state if needed
+    // const activeNavLinkStyle = "text-indigo-600 bg-indigo-50 font-semibold";
 
     return (
         <header className="bg-white shadow-sm sticky top-0 z-40">
@@ -156,11 +172,11 @@ const Header = ({ navigateTo, userRole }) => {
                             src="https://hootone.org/wp-content/uploads/2024/06/cropped-Logo-website.jpg"
                             alt="Hootone Remedies Logo"
                             className="h-10 w-auto"
-                            onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }}
+                            onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/100x40/e2e8f0/475569?text=Hootone'; }}
                         />
-                        <h1 className="text-xl font-bold text-slate-800 hidden">Hootone Remedies</h1>
+                        <h1 className="text-xl font-bold text-slate-800 hidden sm:block">Hootone Remedies</h1>
                     </div>
-                    <nav className="hidden md:flex items-center space-x-6">
+                    <nav className="hidden md:flex items-center space-x-2">
                         <button onClick={() => navigateTo('dashboard')} className={navLinkStyle}>Dashboard</button>
                         <button onClick={() => navigateTo('customers')} className={navLinkStyle}>Customers</button>
                         <button onClick={() => navigateTo('add-sale')} className={navLinkStyle}>Add Sale</button>
@@ -172,7 +188,7 @@ const Header = ({ navigateTo, userRole }) => {
                             </>
                         )}
                     </nav>
-                    <button onClick={handleSignOut} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition-all duration-300 shadow-sm hover:shadow-md">
+                    <button onClick={handleSignOut} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition-all duration-300 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                         Logout
                     </button>
                 </div>
@@ -194,32 +210,71 @@ const LoginScreen = () => {
         try {
             await signInWithEmailAndPassword(auth, email, password);
         } catch (err) {
-            setError(err.message.replace('Firebase: ', ''));
+            // Provide user-friendly error messages
+            if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+                setError('Invalid email or password. Please try again.');
+            } else {
+                setError('An error occurred. Please try again later.');
+            }
+            console.error("Login Error: ", err);
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="flex items-center justify-center min-h-screen bg-slate-100">
-            <div className="w-full max-w-sm p-8 space-y-6 bg-white rounded-xl shadow-lg">
+        <div className="flex items-center justify-center min-h-screen bg-slate-50 p-4">
+            <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-2xl shadow-lg">
                 <div className="text-center">
-                    <img src="https://hootone.org/wp-content/uploads/2024/06/cropped-Logo-website.jpg" alt="Logo" className="mx-auto h-16 w-auto" />
-                    <h1 className="mt-4 text-2xl font-bold text-slate-900">Hootone Remedies</h1>
-                    <p className="mt-1 text-slate-600">Sales & Reminder System</p>
+                    <img
+                        src="https://hootone.org/wp-content/uploads/2024/06/cropped-Logo-website.jpg"
+                        alt="Hootone Remedies Logo"
+                        className="mx-auto h-16 w-auto"
+                        onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/150x60/e2e8f0/475569?text=Hootone'; }}
+                    />
+                    <h1 className="mt-5 text-3xl font-bold text-slate-900">
+                        Hootone Remedies
+                    </h1>
+                    <p className="mt-2 text-slate-600">Sales & Reminder System</p>
                 </div>
-                {error && <p className="form-error">{error}</p>}
+
                 <form onSubmit={handleLogin} className="space-y-6">
+                    {error && (
+                        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md" role="alert">
+                            <p className="font-bold">Error</p>
+                            <p>{error}</p>
+                        </div>
+                    )}
                     <div>
-                        <label className="form-label">Email</label>
-                        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="form-input" required />
+                        <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
+                        <input
+                            id="email"
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="block w-full px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm shadow-sm placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                            required
+                            placeholder="you@example.com"
+                        />
                     </div>
                     <div>
-                        <label className="form-label">Password</label>
-                        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="form-input" required />
+                        <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+                        <input
+                            id="password"
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="block w-full px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm shadow-sm placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                            required
+                            placeholder="••••••••"
+                        />
                     </div>
                     <div>
-                        <button type="submit" disabled={loading} className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition duration-300 disabled:bg-indigo-400">
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="w-full flex justify-center py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition duration-300 disabled:bg-indigo-400 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        >
                             {loading ? 'Logging in...' : 'Login'}
                         </button>
                     </div>
@@ -228,6 +283,7 @@ const LoginScreen = () => {
         </div>
     );
 };
+
 
 const Dashboard = ({ user }) => {
     const [sales, setSales] = useState([]);
@@ -243,7 +299,8 @@ const Dashboard = ({ user }) => {
             : query(collection(db, "sales"), where("teamMemberId", "==", user.uid));
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            setSales(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            const salesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setSales(salesData);
             setLoading(false);
         }, (err) => { console.error(err); setLoading(false); });
 
@@ -271,38 +328,46 @@ const Dashboard = ({ user }) => {
 
     const filteredSales = getFilteredSales();
 
+    // Common Tailwind classes
+    const tabButton = "px-4 py-2 font-medium text-sm rounded-t-lg transition-colors duration-200 focus:outline-none";
+    const tabButtonActive = "bg-white text-indigo-600 border-b-2 border-indigo-600";
+    const tabButtonInactive = "text-slate-500 hover:text-slate-700";
+    const tableHeader = "p-4 text-left text-xs font-medium text-slate-500 uppercase tracking-wider";
+    const tableCell = "p-4 whitespace-nowrap text-sm text-slate-600";
+    const actionButton = "px-3 py-1 text-xs font-semibold rounded-full transition-all duration-200";
+
     return (
         <div className="container mx-auto">
             <h2 className="text-3xl font-bold text-slate-800 mb-6">Reminder Dashboard</h2>
             <div className="bg-white p-6 rounded-xl shadow-lg">
-                <div className="flex border-b mb-4">
-                    <button onClick={() => setFilter('expiring_5_days')} className={`tab-button ${filter === 'expiring_5_days' && 'tab-button-active'}`}>Expiring in 5 Days</button>
-                    <button onClick={() => setFilter('expired_today')} className={`tab-button ${filter === 'expired_today' && 'tab-button-active'}`}>Expiring Today</button>
-                    <button onClick={() => setFilter('already_expired')} className={`tab-button ${filter === 'already_expired' && 'tab-button-active'}`}>Already Expired</button>
+                <div className="flex border-b border-slate-200 -mt-6 -mx-6 mb-6 px-6">
+                    <button onClick={() => setFilter('expiring_5_days')} className={`${tabButton} ${filter === 'expiring_5_days' ? tabButtonActive : tabButtonInactive}`}>Expiring in 5 Days</button>
+                    <button onClick={() => setFilter('expired_today')} className={`${tabButton} ${filter === 'expired_today' ? tabButtonActive : tabButtonInactive}`}>Expiring Today</button>
+                    <button onClick={() => setFilter('already_expired')} className={`${tabButton} ${filter === 'already_expired' ? tabButtonActive : tabButtonInactive}`}>Already Expired</button>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
                         <thead>
                             <tr className="bg-slate-50">
-                                <th className="table-header">Patient Name</th>
-                                <th className="table-header">Phone</th>
-                                <th className="table-header">Medicine</th>
-                                <th className="table-header">Dosage End Date</th>
-                                <th className="table-header">Actions</th>
+                                <th className={tableHeader}>Patient Name</th>
+                                <th className={tableHeader}>Phone</th>
+                                <th className={tableHeader}>Medicine</th>
+                                <th className={tableHeader}>Dosage End Date</th>
+                                <th className={tableHeader}>Actions</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="divide-y divide-slate-200">
                             {filteredSales.length > 0 ? filteredSales.map(sale => (
-                                <tr key={sale.id} className="border-b border-slate-200 hover:bg-slate-50">
-                                    <td className="table-cell font-medium text-slate-800">{sale.patientName}</td>
-                                    <td className="table-cell">{sale.phoneNumber}</td>
-                                    <td className="table-cell">{sale.medicineName}</td>
-                                    <td className="table-cell">{new Date(sale.dosageEndDate.seconds * 1000).toLocaleDateString()}</td>
-                                    <td className="table-cell">
+                                <tr key={sale.id} className="hover:bg-slate-50">
+                                    <td className={`${tableCell} font-medium text-slate-800`}>{sale.patientName}</td>
+                                    <td className={tableCell}>{sale.phoneNumber}</td>
+                                    <td className={tableCell}>{sale.medicineName}</td>
+                                    <td className={tableCell}>{new Date(sale.dosageEndDate.seconds * 1000).toLocaleDateString()}</td>
+                                    <td className={tableCell}>
                                         <div className="flex items-center space-x-2">
-                                            <a href={`tel:${sale.phoneNumber}`} className="action-button-blue">Call</a>
-                                            <button onClick={() => { setSelectedSale(sale); setShowReorderModal(true); }} className="action-button-green">Reorder</button>
-                                            <a href={`https://wa.me/${sale.whatsappNumber || sale.phoneNumber}`} target="_blank" rel="noopener noreferrer" className="action-button-gray">WhatsApp</a>
+                                            <a href={`tel:${sale.phoneNumber}`} className={`${actionButton} bg-blue-100 text-blue-800 hover:bg-blue-200`}>Call</a>
+                                            <button onClick={() => { setSelectedSale(sale); setShowReorderModal(true); }} className={`${actionButton} bg-green-100 text-green-800 hover:bg-green-200`}>Reorder</button>
+                                            <a href={`https://wa.me/${sale.whatsappNumber || sale.phoneNumber}`} target="_blank" rel="noopener noreferrer" className={`${actionButton} bg-slate-200 text-slate-800 hover:bg-slate-300`}>WhatsApp</a>
                                         </div>
                                     </td>
                                 </tr>
@@ -317,6 +382,16 @@ const Dashboard = ({ user }) => {
         </div>
     );
 };
+
+// NOTE: The rest of the components are omitted for brevity but are assumed to be the same as in the original file.
+// Make sure to copy the rest of the components from the original file into this one.
+
+// --- Helper function to define form input styles ---
+const formInputStyles = "block w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm shadow-sm placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500";
+const formLabelStyles = "block text-sm font-medium text-slate-700 mb-1";
+const primaryButtonStyles = "inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400";
+const secondaryButtonStyles = "inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500";
+const iconButtonStyles = "p-2 rounded-full transition-colors duration-200";
 
 const AllCustomersList = ({ user }) => {
     const [sales, setSales] = useState([]);
@@ -338,22 +413,25 @@ const AllCustomersList = ({ user }) => {
     }, [user]);
 
     const filteredSales = sales.filter(sale =>
-        sale.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        sale.phoneNumber.includes(searchTerm)
-    ).sort((a, b) => a.patientName.localeCompare(b.patientName));
+        (sale.patientName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (sale.phoneNumber || '').includes(searchTerm)
+    ).sort((a, b) => (a.patientName || '').localeCompare(b.patientName || ''));
 
     if (loading) return <div className="text-center p-10">Loading Customers...</div>;
 
+    const tableHeader = "p-4 text-left text-xs font-medium text-slate-500 uppercase tracking-wider";
+    const tableCell = "p-4 whitespace-nowrap text-sm text-slate-600";
+
     return (
         <div className="container mx-auto">
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
                 <h2 className="text-3xl font-bold text-slate-800">All Customers</h2>
                 <input
                     type="text"
                     placeholder="Search by name or phone..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="form-input w-full max-w-xs"
+                    className={`${formInputStyles} w-full max-w-xs`}
                 />
             </div>
             <div className="bg-white p-6 rounded-xl shadow-lg">
@@ -361,21 +439,21 @@ const AllCustomersList = ({ user }) => {
                     <table className="w-full text-left">
                         <thead>
                             <tr className="bg-slate-50">
-                                <th className="table-header">Patient Name</th>
-                                <th className="table-header">Phone</th>
-                                <th className="table-header">Last Medicine</th>
-                                <th className="table-header">End Date</th>
-                                {user.role === 'admin' && <th className="table-header">Rep</th>}
+                                <th className={tableHeader}>Patient Name</th>
+                                <th className={tableHeader}>Phone</th>
+                                <th className={tableHeader}>Last Medicine</th>
+                                <th className={tableHeader}>End Date</th>
+                                {user.role === 'admin' && <th className={tableHeader}>Rep</th>}
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="divide-y divide-slate-200">
                             {filteredSales.length > 0 ? filteredSales.map(sale => (
-                                <tr key={sale.id} className="border-b border-slate-200 hover:bg-slate-50">
-                                    <td className="table-cell font-medium text-slate-800">{sale.patientName}</td>
-                                    <td className="table-cell">{sale.phoneNumber}</td>
-                                    <td className="table-cell">{sale.medicineName}</td>
-                                    <td className="table-cell">{sale.dosageEndDate ? new Date(sale.dosageEndDate.seconds * 1000).toLocaleDateString() : 'N/A'}</td>
-                                    {user.role === 'admin' && <td className="table-cell">{sale.teamMemberName}</td>}
+                                <tr key={sale.id} className="hover:bg-slate-50">
+                                    <td className={`${tableCell} font-medium text-slate-800`}>{sale.patientName}</td>
+                                    <td className={tableCell}>{sale.phoneNumber}</td>
+                                    <td className={tableCell}>{sale.medicineName}</td>
+                                    <td className={tableCell}>{sale.dosageEndDate ? new Date(sale.dosageEndDate.seconds * 1000).toLocaleDateString() : 'N/A'}</td>
+                                    {user.role === 'admin' && <td className={tableCell}>{sale.teamMemberName}</td>}
                                 </tr>
                             )) : (
                                 <tr><td colSpan={user.role === 'admin' ? 5 : 4} className="text-center p-6 text-slate-500">No customers found.</td></tr>
@@ -454,46 +532,46 @@ const AddSaleForm = ({ user, navigateTo }) => {
             <form onSubmit={handleSubmit} className="bg-white p-8 rounded-xl shadow-lg space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <label className="form-label">Patient Name</label>
-                        <input name="patientName" value={formData.patientName} onChange={handleChange} className="form-input" required />
+                        <label className={formLabelStyles}>Patient Name</label>
+                        <input name="patientName" value={formData.patientName} onChange={handleChange} className={formInputStyles} required />
                     </div>
                     <div>
-                        <label className="form-label">Phone Number</label>
-                        <input name="phoneNumber" type="tel" value={formData.phoneNumber} onChange={handleChange} className="form-input" required />
+                        <label className={formLabelStyles}>Phone Number</label>
+                        <input name="phoneNumber" type="tel" value={formData.phoneNumber} onChange={handleChange} className={formInputStyles} required />
                     </div>
                 </div>
                 <div>
-                    <label className="form-label">WhatsApp Number (optional)</label>
-                    <input name="whatsappNumber" type="tel" value={formData.whatsappNumber} onChange={handleChange} className="form-input" placeholder="Same as phone if left blank" />
+                    <label className={formLabelStyles}>WhatsApp Number (optional)</label>
+                    <input name="whatsappNumber" type="tel" value={formData.whatsappNumber} onChange={handleChange} className={formInputStyles} placeholder="Same as phone if left blank" />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <label className="form-label">Medicine</label>
-                        <select name="medicineId" value={formData.medicineId} onChange={handleChange} className="form-input" required>
+                        <label className={formLabelStyles}>Medicine</label>
+                        <select name="medicineId" value={formData.medicineId} onChange={handleChange} className={formInputStyles} required>
                             {medicines.map(med => <option key={med.id} value={med.id}>{med.name}</option>)}
                         </select>
                     </div>
                     <div>
-                        <label className="form-label">Price ($)</label>
-                        <input name="price" type="number" step="0.01" value={formData.price} onChange={handleChange} className="form-input" required />
+                        <label className={formLabelStyles}>Price ($)</label>
+                        <input name="price" type="number" step="0.01" value={formData.price} onChange={handleChange} className={formInputStyles} required />
                     </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <label className="form-label">Optional Charges ($)</label>
-                        <input name="optionalCharges" type="number" step="0.01" value={formData.optionalCharges} onChange={handleChange} className="form-input" />
+                        <label className={formLabelStyles}>Optional Charges ($)</label>
+                        <input name="optionalCharges" type="number" step="0.01" value={formData.optionalCharges} onChange={handleChange} className={formInputStyles} />
                     </div>
                     <div>
-                        <label className="form-label">Purchase Date</label>
-                        <input name="purchaseDate" type="date" value={formData.purchaseDate} onChange={handleChange} className="form-input" required />
+                        <label className={formLabelStyles}>Purchase Date</label>
+                        <input name="purchaseDate" type="date" value={formData.purchaseDate} onChange={handleChange} className={formInputStyles} required />
                     </div>
                 </div>
                 <div>
-                    <label className="form-label">Duration (Months)</label>
-                    <input name="duration" type="number" value={formData.duration} onChange={handleChange} min="1" className="form-input" required />
+                    <label className={formLabelStyles}>Duration (Months)</label>
+                    <input name="duration" type="number" value={formData.duration} onChange={handleChange} min="1" className={formInputStyles} required />
                 </div>
                 <div className="pt-4">
-                    <button type="submit" disabled={loading} className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition duration-300 disabled:bg-indigo-400">
+                    <button type="submit" disabled={loading} className={`${primaryButtonStyles} w-full py-3`}>
                         {loading ? 'Adding Sale...' : 'Add Sale'}
                     </button>
                 </div>
@@ -533,6 +611,7 @@ const ManageMedicines = () => {
     };
 
     const confirmDelete = async () => {
+        if (!selectedMedicine) return;
         try {
             await deleteDoc(doc(db, "medicines", selectedMedicine.id));
             notifier.addNotification("Medicine deleted successfully.");
@@ -548,7 +627,7 @@ const ManageMedicines = () => {
         <div className="container mx-auto">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-3xl font-bold text-slate-800">Manage Medicines</h2>
-                <button onClick={() => setShowAddModal(true)} className="primary-button">Add New Medicine</button>
+                <button onClick={() => setShowAddModal(true)} className={primaryButtonStyles}>Add New Medicine</button>
             </div>
             <div className="bg-white rounded-xl shadow-lg p-6">
                 <ul className="space-y-4">
@@ -562,12 +641,12 @@ const ManageMedicines = () => {
                                 />
                                 <div>
                                     <p className="font-semibold text-slate-800">{med.name}</p>
-                                    <p className="text-lg font-bold text-indigo-600">${med.price.toFixed(2)}</p>
+                                    <p className="text-lg font-bold text-indigo-600">${parseFloat(med.price).toFixed(2)}</p>
                                 </div>
                             </div>
                             <div className="flex items-center space-x-3">
-                                <button onClick={() => handleEdit(med)} className="icon-button-blue"><EditIcon /></button>
-                                <button onClick={() => handleDelete(med)} className="icon-button-red"><TrashIcon /></button>
+                                <button onClick={() => handleEdit(med)} className={`${iconButtonStyles} text-blue-600 hover:bg-blue-100`}><EditIcon /></button>
+                                <button onClick={() => handleDelete(med)} className={`${iconButtonStyles} text-red-600 hover:bg-red-100`}><TrashIcon /></button>
                             </div>
                         </li>
                     ))}
@@ -601,6 +680,7 @@ const ManageTeam = () => {
     };
 
     const confirmDelete = async () => {
+        if (!selectedMember) return;
         try {
             // IMPORTANT: This only deletes the Firestore user document.
             // It does NOT delete the user from Firebase Authentication.
@@ -619,7 +699,7 @@ const ManageTeam = () => {
         <div className="container mx-auto">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-3xl font-bold text-slate-800">Manage Team</h2>
-                <button onClick={() => setShowAddModal(true)} className="primary-button">Add New Member</button>
+                <button onClick={() => setShowAddModal(true)} className={primaryButtonStyles}>Add New Member</button>
             </div>
             <div className="bg-white rounded-xl shadow-lg p-6">
                 <ul className="space-y-3">
@@ -629,7 +709,7 @@ const ManageTeam = () => {
                                 <p className="font-semibold text-slate-800">{member.name}</p>
                                 <p className="text-sm text-slate-500">{member.email}</p>
                             </div>
-                            <button onClick={() => handleDelete(member)} className="icon-button-red"><TrashIcon /></button>
+                            <button onClick={() => handleDelete(member)} className={`${iconButtonStyles} text-red-600 hover:bg-red-100`}><TrashIcon /></button>
                         </li>
                     ))}
                 </ul>
@@ -641,6 +721,21 @@ const ManageTeam = () => {
 };
 
 // --- Modals and Forms ---
+
+const ModalBackdrop = ({ children, onClose }) => (
+    <div
+        className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4"
+        onClick={onClose}
+    >
+        <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6"
+            onClick={e => e.stopPropagation()}
+        >
+            {children}
+        </div>
+    </div>
+);
+
 
 const MedicineFormModal = ({ medicine, onClose }) => {
     const [formData, setFormData] = useState({ name: '', price: '', imageUrl: '' });
@@ -677,29 +772,27 @@ const MedicineFormModal = ({ medicine, onClose }) => {
     };
 
     return (
-        <div className="modal-backdrop">
-            <div className="modal-content">
-                <h3 className="text-2xl font-bold text-slate-800 mb-6">{isEditMode ? 'Edit Medicine' : 'Add New Medicine'}</h3>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div>
-                        <label className="form-label">Medicine Name</label>
-                        <input name="name" value={formData.name} onChange={handleChange} className="form-input" required />
-                    </div>
-                    <div>
-                        <label className="form-label">Price ($)</label>
-                        <input name="price" type="number" step="0.01" value={formData.price} onChange={handleChange} className="form-input" required />
-                    </div>
-                    <div>
-                        <label className="form-label">Image URL (optional)</label>
-                        <input name="imageUrl" value={formData.imageUrl} onChange={handleChange} className="form-input" />
-                    </div>
-                    <div className="flex justify-end space-x-4 pt-4">
-                        <button type="button" onClick={onClose} className="secondary-button">Cancel</button>
-                        <button type="submit" disabled={loading} className="primary-button">{loading ? 'Saving...' : 'Save'}</button>
-                    </div>
-                </form>
-            </div>
-        </div>
+        <ModalBackdrop onClose={onClose}>
+            <h3 className="text-2xl font-bold text-slate-800 mb-6">{isEditMode ? 'Edit Medicine' : 'Add New Medicine'}</h3>
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className={formLabelStyles}>Medicine Name</label>
+                    <input name="name" value={formData.name} onChange={handleChange} className={formInputStyles} required />
+                </div>
+                <div>
+                    <label className={formLabelStyles}>Price ($)</label>
+                    <input name="price" type="number" step="0.01" value={formData.price} onChange={handleChange} className={formInputStyles} required />
+                </div>
+                <div>
+                    <label className={formLabelStyles}>Image URL (optional)</label>
+                    <input name="imageUrl" value={formData.imageUrl} onChange={handleChange} className={formInputStyles} />
+                </div>
+                <div className="flex justify-end space-x-4 pt-4">
+                    <button type="button" onClick={onClose} className={secondaryButtonStyles}>Cancel</button>
+                    <button type="submit" disabled={loading} className={primaryButtonStyles}>{loading ? 'Saving...' : 'Save'}</button>
+                </div>
+            </form>
+        </ModalBackdrop>
     );
 };
 
@@ -714,6 +807,8 @@ const AddTeamMemberModal = ({ onClose }) => {
         e.preventDefault();
         setLoading(true);
         try {
+            // Note: In a real app, you might not want to sign in as the new user.
+            // This is a simplification. Usually, an admin SDK on a server would create users.
             const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
             await setDoc(doc(db, "users", userCredential.user.uid), {
                 name: formData.name, email: formData.email, role: 'team_member', createdAt: new Date()
@@ -728,20 +823,18 @@ const AddTeamMemberModal = ({ onClose }) => {
     };
 
     return (
-        <div className="modal-backdrop">
-            <div className="modal-content">
-                <h3 className="text-2xl font-bold text-slate-800 mb-6">Add New Team Member</h3>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div><label className="form-label">Name</label><input name="name" value={formData.name} onChange={handleChange} className="form-input" required /></div>
-                    <div><label className="form-label">Email</label><input name="email" type="email" value={formData.email} onChange={handleChange} className="form-input" required /></div>
-                    <div><label className="form-label">Password</label><input name="password" type="password" value={formData.password} onChange={handleChange} className="form-input" required /></div>
-                    <div className="flex justify-end space-x-4 pt-4">
-                        <button type="button" onClick={onClose} className="secondary-button">Cancel</button>
-                        <button type="submit" disabled={loading} className="primary-button">{loading ? 'Adding...' : 'Add Member'}</button>
-                    </div>
-                </form>
-            </div>
-        </div>
+        <ModalBackdrop onClose={onClose}>
+            <h3 className="text-2xl font-bold text-slate-800 mb-6">Add New Team Member</h3>
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div><label className={formLabelStyles}>Name</label><input name="name" value={formData.name} onChange={handleChange} className={formInputStyles} required /></div>
+                <div><label className={formLabelStyles}>Email</label><input name="email" type="email" value={formData.email} onChange={handleChange} className={formInputStyles} required /></div>
+                <div><label className={formLabelStyles}>Password</label><input name="password" type="password" value={formData.password} onChange={handleChange} className={formInputStyles} required minLength="6" /></div>
+                <div className="flex justify-end space-x-4 pt-4">
+                    <button type="button" onClick={onClose} className={secondaryButtonStyles}>Cancel</button>
+                    <button type="submit" disabled={loading} className={primaryButtonStyles}>{loading ? 'Adding...' : 'Add Member'}</button>
+                </div>
+            </form>
+        </ModalBackdrop>
     );
 };
 
@@ -773,61 +866,58 @@ const ReorderModal = ({ sale, onClose, user }) => {
     };
 
     return (
-        <div className="modal-backdrop">
-            <div className="modal-content">
-                <h3 className="text-2xl font-bold mb-4">Reorder for {sale.patientName}</h3>
-                <div className="space-y-4">
-                    <div><label className="form-label">New Purchase Date</label><input type="date" value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} className="form-input" /></div>
-                    <div><label className="form-label">New Duration (Months)</label><input type="number" value={duration} onChange={e => setDuration(e.target.value)} min="1" className="form-input" /></div>
-                </div>
-                <div className="mt-6 flex justify-end space-x-4">
-                    <button onClick={onClose} className="secondary-button">Cancel</button>
-                    <button onClick={handleReorder} disabled={loading} className="primary-button">{loading ? 'Updating...' : 'Confirm Reorder'}</button>
-                </div>
+        <ModalBackdrop onClose={onClose}>
+            <h3 className="text-2xl font-bold mb-4">Reorder for {sale.patientName}</h3>
+            <div className="space-y-4">
+                <div><label className={formLabelStyles}>New Purchase Date</label><input type="date" value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} className={formInputStyles} /></div>
+                <div><label className={formLabelStyles}>New Duration (Months)</label><input type="number" value={duration} onChange={e => setDuration(e.target.value)} min="1" className={formInputStyles} /></div>
             </div>
-        </div>
+            <div className="mt-6 flex justify-end space-x-4">
+                <button onClick={onClose} className={secondaryButtonStyles}>Cancel</button>
+                <button onClick={handleReorder} disabled={loading} className={primaryButtonStyles}>{loading ? 'Updating...' : 'Confirm Reorder'}</button>
+            </div>
+        </ModalBackdrop>
     );
 };
 
 const ConfirmDeleteModal = ({ onConfirm, onCancel, message }) => (
-    <div className="modal-backdrop">
-        <div className="modal-content max-w-md">
-            <div className="flex items-start space-x-4">
-                <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
-                    <AlertTriangleIcon />
-                </div>
-                <div className="mt-3 text-center sm:mt-0 sm:text-left">
-                    <h3 className="text-lg leading-6 font-medium text-slate-900">Confirm Deletion</h3>
-                    <div className="mt-2">
-                        <p className="text-sm text-slate-500">{message}</p>
-                    </div>
-                </div>
+    <ModalBackdrop onClose={onCancel}>
+        <div className="sm:flex sm:items-start">
+            <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+                <AlertTriangleIcon />
             </div>
-            <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-                <button type="button" onClick={onConfirm} className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 sm:ml-3 sm:w-auto sm:text-sm">
-                    Delete
-                </button>
-                <button type="button" onClick={onCancel} className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">
-                    Cancel
-                </button>
+            <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                <h3 className="text-lg leading-6 font-medium text-slate-900">Confirm Deletion</h3>
+                <div className="mt-2">
+                    <p className="text-sm text-slate-500">{message}</p>
+                </div>
             </div>
         </div>
-    </div>
+        <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+            <button type="button" onClick={onConfirm} className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm">
+                Delete
+            </button>
+            <button type="button" onClick={onCancel} className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm">
+                Cancel
+            </button>
+        </div>
+    </ModalBackdrop>
 );
 
 const NotificationContainer = ({ notifications }) => (
     <div className="fixed top-5 right-5 z-50 space-y-3 w-full max-w-xs">
         {notifications.map(({ id, message, type }) => (
-            <div key={id} className={`notification ${type === 'success' ? 'notification-success' : 'notification-error'}`}>
-                {type === 'success' ? <CheckCircleIcon /> : <AlertTriangleIcon />}
-                <p className="font-medium">{message}</p>
+            <div key={id} className={`flex items-center p-4 rounded-lg shadow-lg text-white ${type === 'success' ? 'bg-emerald-500' : 'bg-red-500'}`}>
+                <div className="flex-shrink-0">
+                    {type === 'success' ? <CheckCircleIcon /> : <AlertTriangleIcon />}
+                </div>
+                <p className="ml-3 font-medium">{message}</p>
             </div>
         ))}
     </div>
 );
 
 const AnalyticsDashboard = ({ user }) => {
-    // This component remains largely the same, just updating currency
     const [sales, setSales] = useState([]);
     useEffect(() => {
         const q = user.role === 'admin' ? collection(db, "sales") : query(collection(db, "sales"), where("teamMemberId", "==", user.uid));
