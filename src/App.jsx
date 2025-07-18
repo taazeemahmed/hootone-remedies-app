@@ -330,6 +330,7 @@ const Dashboard = ({ user }) => {
     const [sales, setSales] = useState([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('expiring_5_days');
+    const [sortBy, setSortBy] = useState('endDate'); // default sort
     const [showReorderModal, setShowReorderModal] = useState(false);
     const [selectedSale, setSelectedSale] = useState(null);
 
@@ -373,12 +374,37 @@ const Dashboard = ({ user }) => {
         });
     }, [sales]);
 
+    useEffect(() => {
+        const todayStr = new Date().toISOString().slice(0, 10); // e.g. '2025-07-18'
+        sales.forEach(async sale => {
+            if (!sale.dosageEndDate || !sale.phoneNumber) return;
+            const endDate = new Date(sale.dosageEndDate.seconds * 1000);
+            const daysLeft = Math.ceil((endDate - new Date()) / (1000 * 60 * 60 * 24));
+
+            // Only send if not already sent today
+            if (daysLeft === 2 && sale.lastReminderSent !== todayStr) {
+                const res = await sendWhatsAppReminder(
+                    sale.phoneNumber,
+                    "med_reminder", // Use your template name
+                    [sale.patientName, sale.medicineName, endDate.toLocaleDateString()]
+                );
+                if (res) {
+                    // Update Firestore so we don't send again today
+                    await updateDoc(doc(db, 'sales', sale.id), { lastReminderSent: todayStr });
+                    addNotification && addNotification(`WhatsApp reminder sent for ${sale.patientName}.`);
+                } else {
+                    addNotification && addNotification(`❌ Failed to send WhatsApp reminder to ${sale.patientName}.`, 'error');
+                }
+            }
+        });
+    }, [sales]);
+
 
     const getFilteredSales = () => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        return sales.filter(sale => {
+        let filtered = sales.filter(sale => {
             if (!sale.dosageEndDate?.seconds) return false;
             const endDate = new Date(sale.dosageEndDate.seconds * 1000);
             endDate.setHours(0, 0, 0, 0);
@@ -388,8 +414,23 @@ const Dashboard = ({ user }) => {
             if (filter === 'expired_today') return diffDays === 0;
             if (filter === 'already_expired') return diffDays < 0;
             return false;
-        }).sort((a, b) => a.dosageEndDate.seconds - b.dosageEndDate.seconds);
+        });
+
+        // --- Add sorting logic ---
+        if (sortBy === 'lastReminderSent') {
+            filtered = filtered.sort((a, b) => {
+                // Show entries without a reminder at the bottom
+                const aDate = a.lastReminderSent ? new Date(a.lastReminderSent).getTime() : 0;
+                const bDate = b.lastReminderSent ? new Date(b.lastReminderSent).getTime() : 0;
+                return bDate - aDate;
+            });
+        } else if (sortBy === 'endDate') {
+            filtered = filtered.sort((a, b) => a.dosageEndDate.seconds - b.dosageEndDate.seconds);
+        }
+
+        return filtered;
     };
+
 
     if (loading) return <div className="text-center p-10">Loading Dashboard...</div>;
 
@@ -413,6 +454,19 @@ const Dashboard = ({ user }) => {
                     <button onClick={() => setFilter('already_expired')} className={`${tabButton} ${filter === 'already_expired' ? tabButtonActive : tabButtonInactive}`}>Already Expired</button>
                 </div>
                 <div className="overflow-x-auto">
+                    {user.role === 'admin' && (
+                        <div className="mb-4 flex items-center">
+                            <label className="mr-2">Sort by:</label>
+                            <select
+                                value={sortBy}
+                                onChange={e => setSortBy(e.target.value)}
+                                className="px-3 py-1 border rounded"
+                            >
+                                <option value="endDate">End Date</option>
+                                <option value="lastReminderSent">Last Reminder Sent</option>
+                            </select>
+                        </div>
+                    )}
                     <table className="w-full text-left">
                         <thead>
                             <tr className="bg-slate-50">
@@ -421,6 +475,7 @@ const Dashboard = ({ user }) => {
                                 <th className={tableHeader}>Medicine</th>
                                 <th className={tableHeader}>Dosage End Date</th>
                                 <th className={tableHeader}>Actions</th>
+                                <th className={tableHeader}>Last Reminder</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200">
@@ -436,6 +491,9 @@ const Dashboard = ({ user }) => {
                                             <button onClick={() => { setSelectedSale(sale); setShowReorderModal(true); }} className={`${actionButton} bg-green-100 text-green-800 hover:bg-green-200`}>Reorder</button>
                                             <a href={`https://wa.me/${sale.whatsappNumber || sale.phoneNumber}`} target="_blank" rel="noopener noreferrer" className={`${actionButton} bg-slate-200 text-slate-800 hover:bg-slate-300`}>WhatsApp</a>
                                         </div>
+                                    </td>
+                                    <td className={tableCell}>
+                                        {sale.lastReminderSent ? new Date(sale.lastReminderSent).toLocaleDateString() : 'Never'}
                                     </td>
                                 </tr>
                             )) : (
