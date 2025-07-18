@@ -326,6 +326,7 @@ const LoginScreen = () => {
 
 
 const Dashboard = ({ user }) => {
+    const { addNotification } = useContext(NotificationContext);
     const [sales, setSales] = useState([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('expiring_5_days');
@@ -346,6 +347,32 @@ const Dashboard = ({ user }) => {
 
         return () => unsubscribe();
     }, [user]);
+
+    const sentToday = new Map();
+
+    useEffect(() => {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        sales.forEach(sale => {
+            if (!sale.dosageEndDate || !sale.phoneNumber) return;
+            const endDate = new Date(sale.dosageEndDate.seconds * 1000);
+            const daysLeft = Math.ceil((endDate - new Date()) / (1000 * 60 * 60 * 24));
+            if (daysLeft === 2) {
+                const sentKey = `${sale.id}-${todayStr}`;
+                if (sentToday.get(sentKey)) return;
+                sendWhatsAppReminder(
+                    sale.phoneNumber,
+                    "med_reminder",
+                    [sale.patientName, sale.medicineName, endDate.toLocaleDateString()]
+                )
+                    .then(res => {
+                        if (res) addNotification(`WhatsApp reminder sent for ${sale.patientName}.`);
+                        else addNotification(`❌ Failed to send WhatsApp reminder to ${sale.patientName}.`, 'error');
+                    });
+                sentToday.set(sentKey, true);
+            }
+        });
+    }, [sales]);
+
 
     const getFilteredSales = () => {
         const today = new Date();
